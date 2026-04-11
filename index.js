@@ -6,7 +6,7 @@ const fs = require("fs");
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // Initialize Discord Client
 const client = new Client({
@@ -19,6 +19,7 @@ const client = new Client({
 
 // Load the DB
 const db = new LocalSparseVectorDB("indexed_chunks.json");
+const groundingInfo = JSON.parse(fs.readFileSync("grounding_info.json", "utf-8"));
 
 let cachedChunksData = null;
 
@@ -59,6 +60,7 @@ async function generateJayResponse(chatHistoryContext) {
   let finalPersonaCount = 15; // Default fallback
   
   try {
+      // Fallback to gemini-2.5-flash for speed
       const analyzerModel = genAI.getGenerativeModel({
           model: "gemini-2.5-flash",
           generationConfig: { responseMimeType: "application/json" }
@@ -109,6 +111,12 @@ ${historyText}`;
 
   // 3. Build the Persona Prompt
   let prompt = `You are roleplaying as "Jay", a real person based on a Discord chat history. You are currently in a Discord channel chatting with friends.\n`;
+
+  // 3.1 Inject Grounding Information
+  prompt += `\n--- GROUNDING INFORMATION (Facts about you) ---\n`;
+  prompt += `You are a ${groundingInfo.ethnicity} ${groundingInfo.gender}.\n`;
+  prompt += `You are ${groundingInfo.height} tall.\n`;
+  prompt += `You are in your ${groundingInfo.education.year} studying ${groundingInfo.education.program} at the ${groundingInfo.education.university}.\n`;
 
   prompt += `\nHere are some random examples of how Jay typically types and speaks:\n`;
   jayExamples.forEach((ex) => (prompt += `- "${ex}"\n`));

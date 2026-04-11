@@ -185,6 +185,26 @@
         <h2>🛠️ Bot Parameters</h2>
         
         <div class="control-group">
+            <label>Preprocessor AI Model</label>
+            <select id="param-analyzer-model" style="width: 100%; padding: 5px; background: var(--bg-input); color: var(--text-main); border: none; border-radius: 4px;">
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Main Chat AI Model</label>
+            <select id="param-main-model" style="width: 100%; padding: 5px; background: var(--bg-input); color: var(--text-main); border: none; border-radius: 4px;">
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+            </select>
+        </div>
+
+        <div class="control-group">
             <label>Temperature <span id="tempVal">0.7</span></label>
             <input type="range" id="param-temp" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('tempVal').innerText = this.value">
         </div>
@@ -279,6 +299,8 @@ CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits,
 
             // Gather parameters
             const params = {
+                analyzerModel: document.getElementById('param-analyzer-model').value,
+                mainModel: document.getElementById('param-main-model').value,
                 temperature: document.getElementById('param-temp').value,
                 topP: document.getElementById('param-topp').value,
                 topK: parseInt(document.getElementById('param-topk').value),
@@ -325,6 +347,10 @@ CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits,
                         `<strong>Parameter Reasoning:</strong> ${data.debug.reasoningForParams}\n` +
                         `<strong>AI Chose RAG Chunks (Top K):</strong> ${data.debug.finalTopK}\n` +
                         `<strong>AI Chose Persona Examples:</strong> ${data.debug.finalPersonaCount}\n\n` +
+                        `<strong style="color:var(--accent);">=== LATENCY PROFILE ===</strong>\n` +
+                        `Preprocessor AI: ${data.debug.latency.analyzer}ms\n` +
+                        `Main Chat AI: ${data.debug.latency.main}ms\n` +
+                        `Total Response Time: ${data.debug.latency.total}ms\n\n` +
                         `<strong style="color:var(--accent);">=== FINAL RAG CONTEXT PROVIDED ===</strong>\n${data.debug.retrievedContext}`;
                 }
             } catch (err) {

@@ -16,6 +16,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Load the DB
 const db = new LocalSparseVectorDB("indexed_chunks.json");
+const groundingInfo = JSON.parse(fs.readFileSync("grounding_info.json", "utf-8"));
 
 let cachedChunksData = null;
 // Helper to get generalized persona quotes
@@ -50,7 +51,9 @@ app.post("/api/chat", async (req, res) => {
     const { history, params } = req.body;
 
     // Destructure tweaking parameters
-    const { temperature, topP, topK, personaCount, systemPrompt, autoAdjust } = params;
+    const { analyzerModel, mainModel, temperature, topP, topK, personaCount, systemPrompt, autoAdjust } = params;
+
+    const t0 = performance.now();
 
     // 1. Context Analysis & Query Expansion (Gemini 2.5 Flash mini-prompt)
     let expandedKeywords = [];
@@ -60,11 +63,14 @@ app.post("/api/chat", async (req, res) => {
     let finalPersonaCount = parseInt(personaCount);
     let aiRecommendedTopK = finalTopK;
     let aiRecommendedPersona = finalPersonaCount;
+    let analyzerLatency = 0;
+    
+    let analyzerStartTime = performance.now();
     
     // Always run the analyzer to get the keywords and recommended context bounds
     try {
-        const analyzerModel = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+        const analyzerGenModel = genAI.getGenerativeModel({
+            model: analyzerModel || "gemini-2.5-flash",
             generationConfig: { responseMimeType: "application/json" }
         });
         
@@ -87,8 +93,9 @@ Return a JSON object with:
 CHAT HISTORY:
 ${historyText}`;
         
-        const analysisResult = await analyzerModel.generateContent(analysisPrompt);
+        const analysisResult = await analyzerGenModel.generateContent(analysisPrompt);
         const analysisData = JSON.parse(analysisResult.response.text());
+        analyzerLatency = Math.round(performance.now() - analyzerStartTime);
         
         expandedKeywords = analysisData.expanded_keywords || [];
         timeContextAnalysis = analysisData.time_context_analysis || "";
@@ -105,6 +112,7 @@ ${historyText}`;
         console.error("Analyzer Error:", err);
         // Fallback to basic extraction
         expandedKeywords = history.map((m) => m.content.split(' ')).flat();
+        analyzerLatency = Math.round(performance.now() - analyzerStartTime);
     }
 
     // Apply auto adjust if enabled
@@ -124,12 +132,18 @@ ${historyText}`;
     // 4. Build the Persona Prompt
     let prompt = systemPrompt + `\n`;
 
-    if (personaCount > 0) {
+    // 4.1 Inject Grounding Information
+    prompt += `\n--- GROUNDING INFORMATION (Facts about you) ---\n`;
+    prompt += `You are a ${groundingInfo.ethnicity} ${groundingInfo.gender}.\n`;
+    prompt += `You are ${groundingInfo.height} tall.\n`;
+    prompt += `You are in your ${groundingInfo.education.year} studying ${groundingInfo.education.program} at the ${groundingInfo.education.university}.\n`;
+
+    if (finalPersonaCount > 0) {
       prompt += `\nHere are some random examples of how Jay typically types and speaks:\n`;
       jayExamples.forEach((ex) => (prompt += `- "${ex}"\n`));
     }
 
-    if (topK > 0) {
+    if (finalTopK > 0) {
       prompt += `\nHere is an AI-generated analysis of the situational/temporal context required to answer accurately:\n"${timeContextAnalysis}"\n`;
       prompt += `\nHere is some retrieved historical context from Jay's past conversations that might be relevant to the current topic:\n`;
       prompt += retrievedContext;
@@ -143,8 +157,9 @@ ${historyText}`;
     prompt += `\nBased on the history and your persona, write Jay's next response. Output ONLY the raw message text, nothing else.\nJay: `;
 
     // 4. Call Gemini with tweaked parameters
+    const mainStartTime = performance.now();
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: mainModel || "gemini-3-flash-preview",
       generationConfig: {
         temperature: parseFloat(temperature),
         topP: parseFloat(topP),
@@ -153,20 +168,27 @@ ${historyText}`;
 
     const result = await model.generateContent(prompt);
     const textResponse = result.response.text().trim();
+    const mainLatency = Math.round(performance.now() - mainStartTime);
+    const totalLatency = Math.round(performance.now() - t0);
 
-        res.json({
-            response: textResponse,
-            debug: {
-                promptUsed: prompt,
-                retrievedContext: retrievedContext,
-                examplesUsed: jayExamples,
-                expandedKeywords: expandedKeywords,
-                timeContextAnalysis: timeContextAnalysis,
-                reasoningForParams: reasoningForParams,
-                finalTopK: finalTopK,
-                finalPersonaCount: finalPersonaCount
+    res.json({
+        response: textResponse,
+        debug: {
+            promptUsed: prompt,
+            retrievedContext: retrievedContext,
+            examplesUsed: jayExamples,
+            expandedKeywords: expandedKeywords,
+            timeContextAnalysis: timeContextAnalysis,
+            reasoningForParams: reasoningForParams,
+            finalTopK: finalTopK,
+            finalPersonaCount: finalPersonaCount,
+            latency: {
+                analyzer: analyzerLatency,
+                main: mainLatency,
+                total: totalLatency
             }
-        });
+        }
+    });
   } catch (error) {
     console.error("API Error:", error);
     res.status(500).json({ error: error.message });
