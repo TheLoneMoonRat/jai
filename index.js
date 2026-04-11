@@ -202,19 +202,19 @@ client.on("messageCreate", async (message) => {
   const isMentioned = message.mentions.has(client.user);
   let hasKeyword =
     content.includes("jay") ||
+    content.includes("jai") ||
     content.includes("jaylord") ||
     content.includes("474381656925536257");
 
-  // Also check if any distinct target-user-specific keyword was mentioned
-  // (We check if the exact word is present, bounded by word boundaries to avoid partial matches)
+  // Check if any distinct target-user-specific keyword was mentioned
   if (!hasKeyword && triggerKeywords.length > 0) {
     // Small optimization: instead of running regex 900+ times per message,
     // tokenize the message content first, and check against a Set
-    const messageWords = new Set(content.match(/\b[a-z]{4,}\b/g) || []);
+    const messageWords = new Set(content.match(/\b[a-z]+\b/g) || []);
     for (const kw of triggerKeywords) {
       if (messageWords.has(kw)) {
         hasKeyword = true;
-        console.log(`[TRIGGER] Woke up because of rare keyword: "${kw}"`);
+        console.log(`[TRIGGER] Woke up because of keyword: "${kw}"`);
         break;
       }
     }
