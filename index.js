@@ -9,22 +9,26 @@ const express = require("express"); // Added express to bind to port for Azure A
 const app = express();
 const port = process.env.PORT || 8080;
 app.get("/", (req, res) => res.send("Bot is alive and running!"));
-app.listen(port, "0.0.0.0", () => console.log(`Dummy health-check server listening on port ${port}`));
+app.listen(port, "0.0.0.0", () =>
+  console.log(`Dummy health-check server listening on port ${port}`),
+);
 
-app.on('error', (e) => {
-    if (e.code === 'EADDRINUSE') {
-        console.error(`Port ${port} is in use, trying an alternative...`);
-        app.listen(0, "0.0.0.0", () => console.log(`Dummy health-check server listening on fallback port`));
-    }
+app.on("error", (e) => {
+  if (e.code === "EADDRINUSE") {
+    console.error(`Port ${port} is in use, trying an alternative...`);
+    app.listen(0, "0.0.0.0", () =>
+      console.log(`Dummy health-check server listening on fallback port`),
+    );
+  }
 });
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ 
-    model: "gemini-3-flash-preview",
-    generationConfig: {
-        temperature: 1.5
-    }
+const model = genAI.getGenerativeModel({
+  model: "gemini-3-flash-preview",
+  generationConfig: {
+    temperature: 1.5,
+  },
 });
 
 // Initialize Discord Client
@@ -39,18 +43,24 @@ const client = new Client({
 // Load the DB
 let db = null;
 if (fs.existsSync("indexed_chunks.json")) {
-    db = new LocalSparseVectorDB("indexed_chunks.json");
+  db = new LocalSparseVectorDB("indexed_chunks.json");
 } else {
-    console.warn("⚠️ Warning: indexed_chunks.json not found! RAG context will be disabled. Run build_index.js to generate the vector database.");
-    // Create a mock DB that safely returns empty results if the file is missing
-    db = { generateAgentContext: () => "" };
+  console.warn(
+    "⚠️ Warning: indexed_chunks.json not found! RAG context will be disabled. Run build_index.js to generate the vector database.",
+  );
+  // Create a mock DB that safely returns empty results if the file is missing
+  db = { generateAgentContext: () => "" };
 }
 
 let triggerKeywords = [];
 if (fs.existsSync("trigger_keywords.json")) {
-    triggerKeywords = JSON.parse(fs.readFileSync("trigger_keywords.json", "utf-8"));
+  triggerKeywords = JSON.parse(
+    fs.readFileSync("trigger_keywords.json", "utf-8"),
+  );
 } else {
-    console.warn("⚠️ Warning: trigger_keywords.json not found! Keyword triggering disabled.");
+  console.warn(
+    "⚠️ Warning: trigger_keywords.json not found! Keyword triggering disabled.",
+  );
 }
 
 let cachedChunksData = null;
@@ -59,16 +69,20 @@ let cachedChunksData = null;
 function getPersonaExamples(count = 20) {
   if (!fs.existsSync("chunked_messages.json")) return [];
   if (!cachedChunksData) {
-      cachedChunksData = JSON.parse(fs.readFileSync("chunked_messages.json", "utf-8"));
+    cachedChunksData = JSON.parse(
+      fs.readFileSync("chunked_messages.json", "utf-8"),
+    );
   }
 
   const examples = [];
   let attempts = 0;
   while (examples.length < count && attempts < 1000) {
     attempts++;
-    const randomChunk = cachedChunksData[Math.floor(Math.random() * cachedChunksData.length)];
-    const randomMsg =
-      randomChunk[Math.floor(Math.random() * randomChunk.length)].content.replace(/💀/g, '');
+    const randomChunk =
+      cachedChunksData[Math.floor(Math.random() * cachedChunksData.length)];
+    const randomMsg = randomChunk[
+      Math.floor(Math.random() * randomChunk.length)
+    ].content.replace(/💀/g, "");
 
     // Filter out URLs, empty strings, and super long blocks for the baseline persona
     if (
@@ -90,16 +104,18 @@ async function generateJayResponse(chatHistoryContext) {
   let timeContextAnalysis = "";
   const finalTopK = 160; // Locked to 160 for production
   const finalPersonaCount = 160; // Locked to 160 for production
-  
+
   try {
-      // Fallback to gemini-2.5-flash for speed
-      const analyzerModel = genAI.getGenerativeModel({
-          model: "gemini-2.5-flash",
-          generationConfig: { responseMimeType: "application/json" }
-      });
-      
-      const historyText = chatHistoryContext.map((m) => m.user + ": " + m.content).join("\n");
-      const analysisPrompt = `You are a search query expander and context analyzer for a chatbot persona named "Jay".
+    // Fallback to gemini-2.5-flash for speed
+    const analyzerModel = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: { responseMimeType: "application/json" },
+    });
+
+    const historyText = chatHistoryContext
+      .map((m) => m.user + ": " + m.content)
+      .join("\n");
+    const analysisPrompt = `You are a search query expander and context analyzer for a chatbot persona named "Jay".
 Read the following recent chat history and determine what information we need to pull from a historical message database.
 Extrapolate keywords (synonyms, related entities, broader concepts) and analyze temporal/situational context. 
 CRITICAL: Evaluate if the recent chat history is actually relevant to why Jay is being summoned. If it's a random ping or a standalone topic shift, set "include_chat_history" to false so he doesn't get confused by irrelevant past messages.
@@ -111,24 +127,29 @@ Return a JSON object with:
 
 CHAT HISTORY:
 ${historyText}`;
-      
-      const analysisResult = await analyzerModel.generateContent(analysisPrompt);
-      // Strip out markdown code blocks if the model wrapped the JSON in them
-      const rawText = analysisResult.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const analysisData = JSON.parse(rawText);
-      
-      expandedKeywords = analysisData.expanded_keywords || [];
-      timeContextAnalysis = analysisData.time_context_analysis || "";
-      
-      // If the AI determined the recent history is irrelevant garbage, we clear it out!
-      if (analysisData.include_chat_history === false) {
-          console.log("[PREPROCESSOR] Decided to IGNORE recent chat history.");
-          chatHistoryContext = [chatHistoryContext[chatHistoryContext.length - 1]]; // Keep ONLY the very last triggering message
-      }
 
+    const analysisResult = await analyzerModel.generateContent(analysisPrompt);
+    // Strip out markdown code blocks if the model wrapped the JSON in them
+    const rawText = analysisResult.response
+      .text()
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
+    const analysisData = JSON.parse(rawText);
+
+    expandedKeywords = analysisData.expanded_keywords || [];
+    timeContextAnalysis = analysisData.time_context_analysis || "";
+
+    // If the AI determined the recent history is irrelevant garbage, we clear it out!
+    if (analysisData.include_chat_history === false) {
+      console.log("[PREPROCESSOR] Decided to IGNORE recent chat history.");
+      chatHistoryContext = [chatHistoryContext[chatHistoryContext.length - 1]]; // Keep ONLY the very last triggering message
+    }
   } catch (err) {
-      console.error("Analyzer Error:", err);
-      expandedKeywords = chatHistoryContext.map((m) => m.content.split(' ')).flat();
+    console.error("Analyzer Error:", err);
+    expandedKeywords = chatHistoryContext
+      .map((m) => m.content.split(" "))
+      .flat();
   }
 
   const jayExamples = getPersonaExamples(finalPersonaCount);
@@ -176,24 +197,27 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   const content = message.content.toLowerCase();
-  
+
   // Triggers: Bot mention, or specific names
   const isMentioned = message.mentions.has(client.user);
-  let hasKeyword = content.includes("jay") || content.includes("jaylord") || content.includes("474381656925536257");
-  
+  let hasKeyword =
+    content.includes("jay") ||
+    content.includes("jaylord") ||
+    content.includes("474381656925536257");
+
   // Also check if any distinct target-user-specific keyword was mentioned
   // (We check if the exact word is present, bounded by word boundaries to avoid partial matches)
   if (!hasKeyword && triggerKeywords.length > 0) {
-      // Small optimization: instead of running regex 900+ times per message, 
-      // tokenize the message content first, and check against a Set
-      const messageWords = new Set(content.match(/\b[a-z]{4,}\b/g) || []);
-      for (const kw of triggerKeywords) {
-          if (messageWords.has(kw)) {
-              hasKeyword = true;
-              console.log(`[TRIGGER] Woke up because of rare keyword: "${kw}"`);
-              break;
-          }
+    // Small optimization: instead of running regex 900+ times per message,
+    // tokenize the message content first, and check against a Set
+    const messageWords = new Set(content.match(/\b[a-z]{4,}\b/g) || []);
+    for (const kw of triggerKeywords) {
+      if (messageWords.has(kw)) {
+        hasKeyword = true;
+        console.log(`[TRIGGER] Woke up because of rare keyword: "${kw}"`);
+        break;
       }
+    }
   }
 
   // Trigger when the bot is mentioned or a keyword is matched
