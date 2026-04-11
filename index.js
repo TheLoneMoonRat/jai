@@ -9,7 +9,7 @@ const express = require("express"); // Added express to bind to port for Azure A
 const app = express();
 const port = process.env.PORT || 8080;
 app.get("/", (req, res) => res.send("Bot is alive and running!"));
-app.listen(port, () => console.log(`Dummy health-check server listening on port ${port}`));
+app.listen(port, "0.0.0.0", () => console.log(`Dummy health-check server listening on port ${port}`));
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
