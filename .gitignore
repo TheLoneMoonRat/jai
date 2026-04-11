@@ -1,6 +1,8 @@
 node_modules/
 .env
-*.json
 !package.json
 !package-lock.json
+!indexed_chunks.json
+!chunked_messages.json
+!trigger_keywords.json
 target_user_474381656925536257_guild_967962436906913792.jsonl
