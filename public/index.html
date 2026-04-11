@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jay Bot Simulator</title>
+    <style>
+        :root {
+            --bg-dark: #36393f;
+            --bg-sidebar: #2f3136;
+            --bg-input: #40444b;
+            --text-main: #dcddde;
+            --text-muted: #72767d;
+            --accent: #5865f2;
+            --border: #202225;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar Settings */
+        .sidebar {
+            width: 350px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            color: #fff;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+
+        .control-group textarea {
+            background-color: var(--bg-input);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-main);
+            padding: 10px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 150px;
+        }
+
+        /* Chat Area */
+        .chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .chat-history {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .message .header {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .message .username {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .message .username.bot {
+            color: var(--accent);
+        }
+
+        .message .content {
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+
+        /* Input Area */
+        .input-area {
+            padding: 20px;
+            background-color: var(--bg-dark);
+        }
+
+        .input-box {
+            display: flex;
+            background-color: var(--bg-input);
+            border-radius: 8px;
+            padding: 10px 15px;
+        }
+
+        .input-box input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 1rem;
+            outline: none;
+        }
+
+        .input-box button {
+            background-color: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+
+        .input-box button:hover {
+            background-color: #4752c4;
+        }
+
+        /* Debug Panel */
+        .debug-panel {
+            background-color: var(--border);
+            padding: 15px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            overflow-y: auto;
+            max-height: 200px;
+            border-top: 1px solid #000;
+            display: none;
+        }
+
+        .toggle-debug {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 10px 20px;
+            text-align: right;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>🛠️ Bot Parameters</h2>
+        
+        <div class="control-group">
+            <label>Temperature <span id="tempVal">0.7</span></label>
+            <input type="range" id="param-temp" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('tempVal').innerText = this.value">
+        </div>
+
+        <div class="control-group">
+            <label>Top P <span id="topPVal">0.95</span></label>
+            <input type="range" id="param-topp" min="0" max="1" step="0.05" value="0.95" oninput="document.getElementById('topPVal').innerText = this.value">
+        </div>
+
+        <div class="control-group">
+            <label>RAG Context Chunks (Top K) <span id="topKVal">3</span></label>
+            <input type="range" id="param-topk" min="0" max="100" step="1" value="3" oninput="document.getElementById('topKVal').innerText = this.value">
+        </div>
+
+        <div class="control-group">
+            <label>Persona Examples <span id="personaVal">15</span></label>
+            <input type="range" id="param-persona" min="0" max="100" step="1" value="15" oninput="document.getElementById('personaVal').innerText = this.value">
+        </div>
+
+        <div class="control-group">
+            <label>System Prompt (Base Instructions)</label>
+            <textarea id="param-prompt">You are roleplaying as "Jay", a real person based on a Discord chat history. You are currently in a Discord channel chatting with friends.
+
+CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits, and slang. Mimic this EXACTLY. Never sound like an AI assistant. Keep responses short and conversational, exactly like a normal Discord message. Do not use punctuation if he doesn't. Do not be overly helpful or formal.</textarea>
+        </div>
+        
+        <button onclick="clearHistory()" style="padding: 10px; background-color: #ed4245; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Clear Chat History</button>
+    </div>
+
+    <div class="chat-container">
+        <div class="chat-history" id="chatHistory">
+            <!-- Messages go here -->
+        </div>
+        
+        <button class="toggle-debug" onclick="toggleDebug()">Toggle Debug Info</button>
+        <div class="debug-panel" id="debugPanel">No debug info yet. Send a message!</div>
+
+        <div class="input-area">
+            <form class="input-box" id="chatForm">
+                <input type="text" id="userInput" placeholder="Message #general as You..." autocomplete="off" required>
+                <button type="submit" id="sendBtn">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let history = [];
+
+        function appendMessage(user, content, isBot = false) {
+            const chatHistory = document.getElementById('chatHistory');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            
+            const headerStr = `<div class="header"><span class="username ${isBot ? 'bot' : ''}">${user}</span></div>`;
+            const contentStr = `<div class="content">${content}</div>`;
+            
+            msgDiv.innerHTML = headerStr + contentStr;
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function clearHistory() {
+            history = [];
+            document.getElementById('chatHistory').innerHTML = '';
+            document.getElementById('debugPanel').innerText = 'History cleared.';
+        }
+
+        function toggleDebug() {
+            const panel = document.getElementById('debugPanel');
+            panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+        }
+
+        document.getElementById('chatForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const inputField = document.getElementById('userInput');
+            const content = inputField.value.trim();
+            if (!content) return;
+
+            // Append User message
+            appendMessage('You', content);
+            history.push({ user: 'You', content: content });
+            inputField.value = '';
+
+            // Disable input while generating
+            inputField.disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+
+            // Gather parameters
+            const params = {
+                temperature: document.getElementById('param-temp').value,
+                topP: document.getElementById('param-topp').value,
+                topK: parseInt(document.getElementById('param-topk').value),
+                personaCount: parseInt(document.getElementById('param-persona').value),
+                systemPrompt: document.getElementById('param-prompt').value
+            };
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ history, params })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    appendMessage('System', 'Error: ' + data.error);
+                } else {
+                    const reply = data.response;
+                    appendMessage('Jay', reply, true);
+                    history.push({ user: 'Jay', content: reply });
+                    
+                    // Keep history capped at 100 messages max
+                    if (history.length > 100) {
+                        history = history.slice(history.length - 100);
+                    }
+
+                    // Update debug panel
+                    document.getElementById('debugPanel').innerText = 
+                        `=== RAG CONTEXT ===\n${data.debug.retrievedContext}\n\n=== EXAMPLES USED ===\n${data.debug.examplesUsed.join('\n')}`;
+                }
+            } catch (err) {
+                appendMessage('System', 'Failed to connect to local server.');
+            } finally {
+                inputField.disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                inputField.focus();
+            }
+        });
+    </script>
+</body>
+</html>

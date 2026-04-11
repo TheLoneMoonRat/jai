@@ -1,0 +1,22 @@
+{
+  "name": "jai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@discordjs/rest": "^2.6.1",
+    "@google/generative-ai": "^0.24.1",
+    "discord-api-types": "^0.38.45",
+    "discord.js": "^14.26.2",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "tiktoken": "^1.0.22"
+  }
+}
