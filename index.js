@@ -11,6 +11,13 @@ const port = process.env.PORT || 8080;
 app.get("/", (req, res) => res.send("Bot is alive and running!"));
 app.listen(port, "0.0.0.0", () => console.log(`Dummy health-check server listening on port ${port}`));
 
+app.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+        console.error(`Port ${port} is in use, trying an alternative...`);
+        app.listen(0, "0.0.0.0", () => console.log(`Dummy health-check server listening on fallback port`));
+    }
+});
+
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 

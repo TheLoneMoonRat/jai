@@ -1,0 +1,8 @@
+{
+  "apps": [
+    {
+      "name": "jai-bot",
+      "script": "index.js"
+    }
+  ]
+}
