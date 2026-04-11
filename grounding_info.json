@@ -1,0 +1,11 @@
+{
+  "name": "Jay",
+  "gender": "Male",
+  "ethnicity": "Chinese",
+  "height": "6'3",
+  "education": {
+    "university": "University of Waterloo (UWaterloo)",
+    "program": "Computer Science",
+    "year": "4th Year"
+  }
+}
