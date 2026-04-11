@@ -79,20 +79,29 @@ async function generateJayResponse(chatHistoryContext) {
       const analysisPrompt = `You are a search query expander and context analyzer for a chatbot persona named "Jay".
 Read the following recent chat history and determine what information we need to pull from a historical message database.
 Extrapolate keywords (synonyms, related entities, broader concepts) and analyze temporal/situational context. 
+CRITICAL: Evaluate if the recent chat history is actually relevant to why Jay is being summoned. If it's a random ping or a standalone topic shift, set "include_chat_history" to false so he doesn't get confused by irrelevant past messages.
 
-For example, if someone asks "what courses are you taking this term?", expand the keywords to ["course", "study", "term", "class", "credits", "school", "midterm"].
 Return a JSON object with:
 - "expanded_keywords": Array of 10-20 highly specific search keywords.
 - "time_context_analysis": A brief analysis of what situational/temporal context matters here.
+- "include_chat_history": Boolean (true or false). Should the main generation model read and respond to the chat history, or just respond blindly to the trigger?
 
 CHAT HISTORY:
 ${historyText}`;
       
       const analysisResult = await analyzerModel.generateContent(analysisPrompt);
-      const analysisData = JSON.parse(analysisResult.response.text());
+      // Strip out markdown code blocks if the model wrapped the JSON in them
+      const rawText = analysisResult.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const analysisData = JSON.parse(rawText);
       
       expandedKeywords = analysisData.expanded_keywords || [];
       timeContextAnalysis = analysisData.time_context_analysis || "";
+      
+      // If the AI determined the recent history is irrelevant garbage, we clear it out!
+      if (analysisData.include_chat_history === false) {
+          console.log("[PREPROCESSOR] Decided to IGNORE recent chat history.");
+          chatHistoryContext = [chatHistoryContext[chatHistoryContext.length - 1]]; // Keep ONLY the very last triggering message
+      }
 
   } catch (err) {
       console.error("Analyzer Error:", err);
