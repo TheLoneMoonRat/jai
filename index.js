@@ -6,7 +6,12 @@ const fs = require("fs");
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-3-flash-preview",
+    generationConfig: {
+        temperature: 1.5
+    }
+});
 
 // Initialize Discord Client
 const client = new Client({
@@ -19,7 +24,11 @@ const client = new Client({
 
 // Load the DB
 const db = new LocalSparseVectorDB("indexed_chunks.json");
-const groundingInfo = JSON.parse(fs.readFileSync("grounding_info.json", "utf-8"));
+
+let triggerKeywords = [];
+if (fs.existsSync("trigger_keywords.json")) {
+    triggerKeywords = JSON.parse(fs.readFileSync("trigger_keywords.json", "utf-8"));
+}
 
 let cachedChunksData = null;
 
@@ -36,7 +45,7 @@ function getPersonaExamples(count = 20) {
     attempts++;
     const randomChunk = cachedChunksData[Math.floor(Math.random() * cachedChunksData.length)];
     const randomMsg =
-      randomChunk[Math.floor(Math.random() * randomChunk.length)].content;
+      randomChunk[Math.floor(Math.random() * randomChunk.length)].content.replace(/💀/g, '');
 
     // Filter out URLs, empty strings, and super long blocks for the baseline persona
     if (
@@ -56,8 +65,8 @@ async function generateJayResponse(chatHistoryContext) {
   // 1. Context Analysis & Query Expansion (Gemini 2.5 Flash mini-prompt)
   let expandedKeywords = [];
   let timeContextAnalysis = "";
-  let finalTopK = 5; // Default fallback
-  let finalPersonaCount = 15; // Default fallback
+  const finalTopK = 160; // Locked to 160 for production
+  const finalPersonaCount = 160; // Locked to 160 for production
   
   try {
       // Fallback to gemini-2.5-flash for speed
@@ -70,17 +79,11 @@ async function generateJayResponse(chatHistoryContext) {
       const analysisPrompt = `You are a search query expander and context analyzer for a chatbot persona named "Jay".
 Read the following recent chat history and determine what information we need to pull from a historical message database.
 Extrapolate keywords (synonyms, related entities, broader concepts) and analyze temporal/situational context. 
-Also, determine the optimal amount of context to provide the final generation model:
-- 'recommended_top_k' (5 to 100): How many past conversation chunks to retrieve via RAG. Use lower values (5-15) for simple greetings or straightforward questions to keep responses fast. Use higher values (20-100) for deep philosophical questions, long stories, or questions about his past.
-- 'recommended_persona_count' (5 to 100): How many random past messages to include to establish his writing style.
 
 For example, if someone asks "what courses are you taking this term?", expand the keywords to ["course", "study", "term", "class", "credits", "school", "midterm"].
 Return a JSON object with:
 - "expanded_keywords": Array of 10-20 highly specific search keywords.
 - "time_context_analysis": A brief analysis of what situational/temporal context matters here.
-- "recommended_top_k": Integer between 5 and 100.
-- "recommended_persona_count": Integer between 5 and 100.
-- "reasoning_for_parameters": A short explanation of why you chose these parameter values.
 
 CHAT HISTORY:
 ${historyText}`;
@@ -90,13 +93,6 @@ ${historyText}`;
       
       expandedKeywords = analysisData.expanded_keywords || [];
       timeContextAnalysis = analysisData.time_context_analysis || "";
-      
-      if (analysisData.recommended_top_k) {
-          finalTopK = Math.max(5, Math.min(100, parseInt(analysisData.recommended_top_k)));
-      }
-      if (analysisData.recommended_persona_count) {
-          finalPersonaCount = Math.max(5, Math.min(100, parseInt(analysisData.recommended_persona_count)));
-      }
 
   } catch (err) {
       console.error("Analyzer Error:", err);
@@ -112,15 +108,9 @@ ${historyText}`;
   // 3. Build the Persona Prompt
   let prompt = `You are roleplaying as "Jay", a real person based on a Discord chat history. You are currently in a Discord channel chatting with friends.\n`;
 
-  // 3.1 Inject Grounding Information
-  prompt += `\n--- GROUNDING INFORMATION (Facts about you) ---\n`;
-  prompt += `You are a ${groundingInfo.ethnicity} ${groundingInfo.gender}.\n`;
-  prompt += `You are ${groundingInfo.height} tall.\n`;
-  prompt += `You are in your ${groundingInfo.education.year} studying ${groundingInfo.education.program} at the ${groundingInfo.education.university}.\n`;
-
   prompt += `\nHere are some random examples of how Jay typically types and speaks:\n`;
   jayExamples.forEach((ex) => (prompt += `- "${ex}"\n`));
-  prompt += `\nCRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits, and slang. Mimic this EXACTLY. Never sound like an AI assistant. Keep responses short and conversational, exactly like a normal Discord message. Do not use punctuation if he doesn't. Do not be overly helpful or formal.\n`;
+  prompt += `\nCRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits, and slang. Mimic this EXACTLY. Never sound like an AI assistant. Keep responses short and conversational, exactly like a normal Discord message. Do not use punctuation if he doesn't. Do not be overly helpful or formal. YOU MUST NEVER USE ANY EMOJIS, ESPECIALLY NOT SKULL EMOJIS. YOUR RESPONSE MUST BE MEANINGFULLY DIFFERENT FROM THE PREVIOUS MESSAGES IN THE CHAT HISTORY. DO NOT PARROT OR SENSELESSLY REPEAT WHAT HAS ALREADY BEEN SAID.\n`;
 
   prompt += `\nHere is an AI-generated analysis of the situational/temporal context required to answer accurately:\n"${timeContextAnalysis}"\n`;
   prompt += `\nHere is some retrieved historical context from Jay's past conversations that might be relevant to the current topic:\n`;
@@ -153,15 +143,36 @@ client.on("messageCreate", async (message) => {
   // Ignore other bots
   if (message.author.bot) return;
 
-  // Trigger when the bot is mentioned
-  if (message.mentions.has(client.user)) {
+  const content = message.content.toLowerCase();
+  
+  // Triggers: Bot mention, or specific names
+  const isMentioned = message.mentions.has(client.user);
+  let hasKeyword = content.includes("jay") || content.includes("jaylord") || content.includes("474381656925536257");
+  
+  // Also check if any distinct target-user-specific keyword was mentioned
+  // (We check if the exact word is present, bounded by word boundaries to avoid partial matches)
+  if (!hasKeyword && triggerKeywords.length > 0) {
+      // Small optimization: instead of running regex 900+ times per message, 
+      // tokenize the message content first, and check against a Set
+      const messageWords = new Set(content.match(/\b[a-z]{4,}\b/g) || []);
+      for (const kw of triggerKeywords) {
+          if (messageWords.has(kw)) {
+              hasKeyword = true;
+              console.log(`[TRIGGER] Woke up because of rare keyword: "${kw}"`);
+              break;
+          }
+      }
+  }
+
+  // Trigger when the bot is mentioned or a keyword is matched
+  if (isMentioned || hasKeyword) {
     // Show typing indicator
     await message.channel.sendTyping();
 
     try {
-      // Fetch the last 100 messages from the channel for context
+      // Fetch the last 10 messages from the channel for context
       const fetchedMessages = await message.channel.messages.fetch({
-        limit: 100,
+        limit: 10,
       });
 
       // Convert to an array and reverse it so it's chronologically oldest -> newest
