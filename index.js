@@ -3,6 +3,13 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { LocalSparseVectorDB } = require("./retriever.js");
 const fs = require("fs");
+const express = require("express"); // Added express to bind to port for Azure App Service
+
+// Initialize Dummy Web Server to satisfy Azure/Cloud Health Checks
+const app = express();
+const port = process.env.PORT || 8080;
+app.get("/", (req, res) => res.send("Bot is alive and running!"));
+app.listen(port, () => console.log(`Dummy health-check server listening on port ${port}`));
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
