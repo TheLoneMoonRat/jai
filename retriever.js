@@ -2,7 +2,14 @@ const fs = require('fs');
 
 class LocalSparseVectorDB {
     constructor(indexPath) {
-        this.chunks = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+        if (!fs.existsSync(indexPath)) {
+        console.warn(`LocalSparseVectorDB Warning: Could not find ${indexPath}.`);
+        this.chunks = [];
+        this.invertedIndex = {};
+        return;
+    }
+    
+    this.chunks = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
         
         // Build an "Inverted Index" in memory for lightning fast retrieval
         // This maps a keyword to an array of chunk_ids that contain it

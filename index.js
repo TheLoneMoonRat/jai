@@ -23,11 +23,20 @@ const client = new Client({
 });
 
 // Load the DB
-const db = new LocalSparseVectorDB("indexed_chunks.json");
+let db = null;
+if (fs.existsSync("indexed_chunks.json")) {
+    db = new LocalSparseVectorDB("indexed_chunks.json");
+} else {
+    console.warn("⚠️ Warning: indexed_chunks.json not found! RAG context will be disabled. Run build_index.js to generate the vector database.");
+    // Create a mock DB that safely returns empty results if the file is missing
+    db = { generateAgentContext: () => "" };
+}
 
 let triggerKeywords = [];
 if (fs.existsSync("trigger_keywords.json")) {
     triggerKeywords = JSON.parse(fs.readFileSync("trigger_keywords.json", "utf-8"));
+} else {
+    console.warn("⚠️ Warning: trigger_keywords.json not found! Keyword triggering disabled.");
 }
 
 let cachedChunksData = null;
