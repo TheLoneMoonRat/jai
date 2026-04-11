@@ -211,6 +211,11 @@
 CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits, and slang. Mimic this EXACTLY. Never sound like an AI assistant. Keep responses short and conversational, exactly like a normal Discord message. Do not use punctuation if he doesn't. Do not be overly helpful or formal.</textarea>
         </div>
         
+        <div class="control-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 5px;">
+            <input type="checkbox" id="param-autoadjust" checked>
+            <label for="param-autoadjust" style="color: #fff; cursor: pointer;">Enable AI Auto-Adjustment for Context & Persona limits</label>
+        </div>
+
         <button onclick="clearHistory()" style="padding: 10px; background-color: #ed4245; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Clear Chat History</button>
     </div>
 
@@ -219,7 +224,7 @@ CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits,
             <!-- Messages go here -->
         </div>
         
-        <button class="toggle-debug" onclick="toggleDebug()">Toggle Debug Info</button>
+        <button class="toggle-debug" onclick="toggleDebug()">Toggle AI Dashboard</button>
         <div class="debug-panel" id="debugPanel">No debug info yet. Send a message!</div>
 
         <div class="input-area">
@@ -278,7 +283,8 @@ CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits,
                 topP: document.getElementById('param-topp').value,
                 topK: parseInt(document.getElementById('param-topk').value),
                 personaCount: parseInt(document.getElementById('param-persona').value),
-                systemPrompt: document.getElementById('param-prompt').value
+                systemPrompt: document.getElementById('param-prompt').value,
+                autoAdjust: document.getElementById('param-autoadjust').checked
             };
 
             try {
@@ -302,9 +308,24 @@ CRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits,
                         history = history.slice(history.length - 100);
                     }
 
+                    // If auto-adjust was on, visually snap the sliders to the AI's choices
+                    if (params.autoAdjust) {
+                        document.getElementById('param-topk').value = data.debug.finalTopK;
+                        document.getElementById('topKVal').innerText = data.debug.finalTopK;
+                        
+                        document.getElementById('param-persona').value = data.debug.finalPersonaCount;
+                        document.getElementById('personaVal').innerText = data.debug.finalPersonaCount;
+                    }
+
                     // Update debug panel
-                    document.getElementById('debugPanel').innerText = 
-                        `=== RAG CONTEXT ===\n${data.debug.retrievedContext}\n\n=== EXAMPLES USED ===\n${data.debug.examplesUsed.join('\n')}`;
+                    document.getElementById('debugPanel').innerHTML = 
+                        `<strong style="color:var(--accent);">=== PREPROCESSOR AI DASHBOARD ===</strong>\n` +
+                        `<strong>Extrapolated Keywords:</strong> ${data.debug.expandedKeywords.join(', ')}\n` +
+                        `<strong>Temporal/Context Analysis:</strong> ${data.debug.timeContextAnalysis}\n` +
+                        `<strong>Parameter Reasoning:</strong> ${data.debug.reasoningForParams}\n` +
+                        `<strong>AI Chose RAG Chunks (Top K):</strong> ${data.debug.finalTopK}\n` +
+                        `<strong>AI Chose Persona Examples:</strong> ${data.debug.finalPersonaCount}\n\n` +
+                        `<strong style="color:var(--accent);">=== FINAL RAG CONTEXT PROVIDED ===</strong>\n${data.debug.retrievedContext}`;
                 }
             } catch (err) {
                 appendMessage('System', 'Failed to connect to local server.');

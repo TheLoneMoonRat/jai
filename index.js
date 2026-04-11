@@ -20,16 +20,20 @@ const client = new Client({
 // Load the DB
 const db = new LocalSparseVectorDB("indexed_chunks.json");
 
+let cachedChunksData = null;
+
 // Helper to get generalized persona quotes from the chunked messages
 function getPersonaExamples(count = 20) {
   if (!fs.existsSync("chunked_messages.json")) return [];
+  if (!cachedChunksData) {
+      cachedChunksData = JSON.parse(fs.readFileSync("chunked_messages.json", "utf-8"));
+  }
 
-  const data = JSON.parse(fs.readFileSync("chunked_messages.json", "utf-8"));
   const examples = [];
   let attempts = 0;
   while (examples.length < count && attempts < 1000) {
     attempts++;
-    const randomChunk = data[Math.floor(Math.random() * data.length)];
+    const randomChunk = cachedChunksData[Math.floor(Math.random() * cachedChunksData.length)];
     const randomMsg =
       randomChunk[Math.floor(Math.random() * randomChunk.length)].content;
 
@@ -46,16 +50,62 @@ function getPersonaExamples(count = 20) {
   return examples;
 }
 
-const jayExamples = getPersonaExamples(15);
-
 // The generalized prompt builder
 async function generateJayResponse(chatHistoryContext) {
-  // 1. Create a search query from the ENTIRE provided chat history (up to 100 messages)
-  // This allows the keyword retriever to find the most relevant chunks based on the broad context of the current conversation
-  const query = chatHistoryContext.map((m) => m.content).join(" ");
+  // 1. Context Analysis & Query Expansion (Gemini 2.5 Flash mini-prompt)
+  let expandedKeywords = [];
+  let timeContextAnalysis = "";
+  let finalTopK = 5; // Default fallback
+  let finalPersonaCount = 15; // Default fallback
+  
+  try {
+      const analyzerModel = genAI.getGenerativeModel({
+          model: "gemini-2.5-flash",
+          generationConfig: { responseMimeType: "application/json" }
+      });
+      
+      const historyText = chatHistoryContext.map((m) => m.user + ": " + m.content).join("\n");
+      const analysisPrompt = `You are a search query expander and context analyzer for a chatbot persona named "Jay".
+Read the following recent chat history and determine what information we need to pull from a historical message database.
+Extrapolate keywords (synonyms, related entities, broader concepts) and analyze temporal/situational context. 
+Also, determine the optimal amount of context to provide the final generation model:
+- 'recommended_top_k' (5 to 100): How many past conversation chunks to retrieve via RAG. Use lower values (5-15) for simple greetings or straightforward questions to keep responses fast. Use higher values (20-100) for deep philosophical questions, long stories, or questions about his past.
+- 'recommended_persona_count' (5 to 100): How many random past messages to include to establish his writing style.
 
-  // 2. Retrieve past context from Vector DB
-  const retrievedContext = db.generateAgentContext(query, 3);
+For example, if someone asks "what courses are you taking this term?", expand the keywords to ["course", "study", "term", "class", "credits", "school", "midterm"].
+Return a JSON object with:
+- "expanded_keywords": Array of 10-20 highly specific search keywords.
+- "time_context_analysis": A brief analysis of what situational/temporal context matters here.
+- "recommended_top_k": Integer between 5 and 100.
+- "recommended_persona_count": Integer between 5 and 100.
+- "reasoning_for_parameters": A short explanation of why you chose these parameter values.
+
+CHAT HISTORY:
+${historyText}`;
+      
+      const analysisResult = await analyzerModel.generateContent(analysisPrompt);
+      const analysisData = JSON.parse(analysisResult.response.text());
+      
+      expandedKeywords = analysisData.expanded_keywords || [];
+      timeContextAnalysis = analysisData.time_context_analysis || "";
+      
+      if (analysisData.recommended_top_k) {
+          finalTopK = Math.max(5, Math.min(100, parseInt(analysisData.recommended_top_k)));
+      }
+      if (analysisData.recommended_persona_count) {
+          finalPersonaCount = Math.max(5, Math.min(100, parseInt(analysisData.recommended_persona_count)));
+      }
+
+  } catch (err) {
+      console.error("Analyzer Error:", err);
+      expandedKeywords = chatHistoryContext.map((m) => m.content.split(' ')).flat();
+  }
+
+  const jayExamples = getPersonaExamples(finalPersonaCount);
+
+  // 2. Retrieve past context from Vector DB (using the AI expanded keywords)
+  const query = expandedKeywords.join(" ");
+  const retrievedContext = db.generateAgentContext(query, finalTopK);
 
   // 3. Build the Persona Prompt
   let prompt = `You are roleplaying as "Jay", a real person based on a Discord chat history. You are currently in a Discord channel chatting with friends.\n`;
@@ -64,6 +114,7 @@ async function generateJayResponse(chatHistoryContext) {
   jayExamples.forEach((ex) => (prompt += `- "${ex}"\n`));
   prompt += `\nCRITICAL INSTRUCTIONS: Notice his tone, use of lowercase, capitalization habits, and slang. Mimic this EXACTLY. Never sound like an AI assistant. Keep responses short and conversational, exactly like a normal Discord message. Do not use punctuation if he doesn't. Do not be overly helpful or formal.\n`;
 
+  prompt += `\nHere is an AI-generated analysis of the situational/temporal context required to answer accurately:\n"${timeContextAnalysis}"\n`;
   prompt += `\nHere is some retrieved historical context from Jay's past conversations that might be relevant to the current topic:\n`;
   prompt += retrievedContext;
 
